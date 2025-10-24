@@ -44,3 +44,4 @@ injuries.to_csv("injuries.csv", index=False)
 team_stats.to_csv("team_stats.csv", index=False)
 schedule.to_csv("schedule.csv", index=False)
 player_stats.to_csv("player_stats.csv", index=False)
+
