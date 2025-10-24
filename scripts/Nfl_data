@@ -1,0 +1,46 @@
+import nflreadpy as nfl
+
+
+def get_draft_rb(start_year=2015, end_year=2024):
+    draft = nfl.load_draft_picks().to_pandas()
+    return draft
+
+
+def get_contracts():
+    contracts = nfl.load_contracts().to_pandas()
+    return contracts
+
+
+def get_injuries():
+    injuries = nfl.load_injuries(seasons=list(range(2015, 2024))).to_pandas()
+    return injuries
+
+
+def get_team_stats():
+    team_stats = nfl.load_team_stats(seasons=list(range(2015, 2024))).to_pandas()
+    return team_stats
+
+
+def get_schedule():
+    schedule = nfl.load_schedules(seasons=list(range(2015, 2024))).to_pandas()
+    return schedule
+
+
+def get_player_stats():
+    player_stats = nfl.load_player_stats(seasons=list(range(2015, 2024))).to_pandas()
+    return player_stats
+
+
+draft_rb = get_draft_rb()
+contracts = get_contracts()
+injuries = get_injuries()
+team_stats = get_team_stats()
+schedule = get_schedule()
+player_stats = get_player_stats()
+
+draft_rb.to_csv("draft_rb.csv", index=False)
+contracts.to_csv("contracts.csv", index=False)
+injuries.to_csv("injuries.csv", index=False)
+team_stats.to_csv("team_stats.csv", index=False)
+schedule.to_csv("schedule.csv", index=False)
+player_stats.to_csv("player_stats.csv", index=False)
