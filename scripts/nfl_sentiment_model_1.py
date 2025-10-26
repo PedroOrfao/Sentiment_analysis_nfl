@@ -23,16 +23,31 @@ sentiment_model = pipeline(
 print('modelo sentimento carregado')
 
 #coleta dos dados no yt
-def buscar_comentarios(jogador, max_videos=2, max_comentarios=30):
+
+def buscar_comentarios(jogador, max_videos=10, max_comentarios=100):
 
     youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
 
-    videos = youtube.search().list(
-        q=f"{jogador} NFL",
-        type='video',
-        part='id',
-        maxResults=max_videos
-    ).execute()
+    videos_processados = 0
+
+    queries = [
+        f"{jogador}",
+        f"{jogador} nfl",
+        f"{jogador} highlights",
+        f"{jogador} 2024"
+    ]
+
+    for query in queries:
+        if videos_processados >= max_videos:
+            break
+
+        videos = youtube.search().list(
+            q=query,
+            type='video',
+            part='id',
+            maxResults=max_videos * 2,
+            order='relevance'
+        ).execute()
 
     comentarios = []
 
@@ -57,6 +72,7 @@ def buscar_comentarios(jogador, max_videos=2, max_comentarios=30):
 
             for item in resultado ['items']:
                 c = item['snippet']['topLevelComment']['snippet']
+
                 comentarios.append({
                     'texto': c['textDisplay'],
                     'likes': c['likeCount'],
@@ -76,10 +92,10 @@ def buscar_comentarios(jogador, max_videos=2, max_comentarios=30):
 def limpeza_groq(comentarios, jogador):
     textos = "\n".join([
         f"{i+1}. {c['texto'][:150]}"
-        for i, c in enumerate(comentarios[:30])
+        for i, c in enumerate(comentarios[:100])
     ])
 
-    prompt = f""""Você é m analista de popularidade da NFL. Analise comentários sobre {jogador}:
+    prompt = f""""Você é um analista de popularidade da NFL. Analise comentários sobre {jogador}:
 
 COMENTÁRIOS:
 {textos}
@@ -92,7 +108,12 @@ Para cada comentário válido (ignore irrelevantes/spam), retorne JSON:
 
 Categorias: desempenho, habilidade, lesao, comparacao, outro
     
-retorne apenas o JSON, nada mais"""
+retorne apenas o JSON, nada mais
+
+REGRAS CRÍTICAS:
+1. NO CAMPO TEXTO: Use apenas aspas simples (') ou remova aspas completamente
+2. Nunca use aspas duplas (") dentro do texto
+3. Remova emojis e caracteres especiais"""
 
     try:
         resposta = groq_client.chat.completions.create(
@@ -108,7 +129,16 @@ retorne apenas o JSON, nada mais"""
         fim = conteudo.rfind('}') + 1
         json_str = conteudo[inicio:fim]
 
-        dados = json.loads(json_str)
+        try:
+            print(f" resultado da limpeza do agente: {json_str[:300]}")
+            dados = json.loads(json_str)
+        except json.JSONDecodeError:
+            print(f" JSON com erro, tentando limpar...")
+            json_limpo = json_str.replace('\n', ' ').replace('\r', '')
+            try:
+                dados = json.loads(json_limpo)
+            except:
+                raise
 
         limpos = []
         for item in dados['comentarios']:
@@ -126,6 +156,10 @@ retorne apenas o JSON, nada mais"""
                     })
             except:
                 continue
+        if limpos:
+            print(f"\n [{jogador}] Groq processou {len(limpos)} comentários")
+            print(f"Exemplo: '{limpos[0]['texto_limpo'][:200]}...' → {limpos[0]['categoria']}")
+            # =========================
 
         return limpos
 
@@ -140,7 +174,7 @@ retorne apenas o JSON, nada mais"""
             'video_titulo': c['video_titulo'],
             'video_publicado_em': c['video_publicado_em'],
             'comentario_publicado_em': c['comentario_publicado_em']
-        } for c in comentarios [:30]]
+        } for c in comentarios [:200]]
 
 #hugging face
 def analisar_sentimento(comentarios):
@@ -178,14 +212,9 @@ def analisar_sentimento(comentarios):
                 'comentario_publicado_em': c['comentario_publicado_em']
             })
 
-            if (i +1) % 5 == 0:
-                print(f" Processados: {i + 1}/{total}")
-
         except Exception as e:
-            print(f" Erro no comentário {i}: {e}")
             continue
 
-    print(f"{len(resultados)}\n")
     return resultados
 
 #data frame no pandas
@@ -204,7 +233,7 @@ def criar_dataframe(resultados, jogador):
     return df[colunas].sort_values('engajamento', ascending=False)
 
 #mini estruturacao
-def estruturar_para_powerbi(lista_dataframes, arquivo="nfl_sentimentos_powerbi.csv"):
+def estruturar_para_powerbi(lista_dataframes, arquivo="Qb_vs_RB.csv"):
 
     df = pd.concat(lista_dataframes, ignore_index=True)
 
@@ -239,9 +268,9 @@ def estruturar_para_powerbi(lista_dataframes, arquivo="nfl_sentimentos_powerbi.c
     return df
 
 #rodar tudo
-def analisar(jogador):
+def analisar(jogador, max_videos=10, max_comentarios=100):
 
-    comentarios = buscar_comentarios(jogador, max_videos=2, max_comentarios=30)
+    comentarios = buscar_comentarios(jogador, max_videos=max_videos, max_comentarios=max_comentarios)
 
     if not comentarios:
         print("nenhum comentario")
@@ -257,17 +286,6 @@ def analisar(jogador):
 
     df = criar_dataframe(resultados, jogador)
 
-    print(f"\n{'=' * 60}")
-    print(f"RESUMO - {jogador}")
-    print(f"{'=' * 60}")
-    print(f"Comentários analisados: {len(df)}")
-    print(f"Sentimento médio: {df['score'].mean():.2f}/5.0")
-    print(f"Total de likes: {df['likes'].sum()}")
-    print(f"\nDistribuição:")
-    print(df['sentimento'].value_counts())
-    print(f"\n Categorias:")
-    print(df['categoria'].value_counts())
-    print("=" * 60 + "\n")
 
     return df
 
@@ -276,14 +294,14 @@ def analisar(jogador):
 if __name__ == "__main__":
 
     jogadores = [
-        "Aaron Rodgers Jets",
-        "Devonta Smith"
+        "Runningback",
+        "Quarterback"
     ]
 
     todos_resultados = []
 
     for jogador in jogadores:
-        df = analisar(jogador)
+        df = analisar(jogador, max_videos=10, max_comentarios=100)
         if df is not None and len(df) > 0:
             todos_resultados.append(df)
         time.sleep(2)
